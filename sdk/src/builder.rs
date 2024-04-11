@@ -53,7 +53,7 @@ impl Builder {
         }
     }
 
-    pub fn handler<F>(&mut self, kind: HandlerKind, handler: F) -> &mut Self
+    pub fn handler<F>(mut self, kind: HandlerKind, handler: F) -> Self
     where
         F: Fn(&ResourcePath) -> Pin<Box<dyn Future<Output = Option<ResourceResponse>> + Send>>
             + Send

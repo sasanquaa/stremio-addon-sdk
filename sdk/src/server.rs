@@ -2,9 +2,9 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use hyper::{body, Request};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
+use hyper::{body, Request};
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 

@@ -65,10 +65,10 @@ impl Router {
             ));
         }
         return match request.uri().path() {
-            p if p == "/" => Box::new(future::ready(
+            "/" => Box::new(future::ready(
                 self.response_from(ResponseKind::Html(landing_template(self.manifest()))),
             )),
-            p if p == ADDON_MANIFEST_PATH => {
+            ADDON_MANIFEST_PATH => {
                 Box::new(future::ready(self.response_from(ResponseKind::Manifest)))
             }
             p => {
