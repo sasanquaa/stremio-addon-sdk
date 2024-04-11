@@ -1,15 +1,21 @@
-use stremio_core::types::addons::Manifest;
+use std::str::FromStr;
 
+use stremio_core::types::addon::Manifest;
+use url::Url;
 
-static STYLESHEET: &str = include_str!("../landing_style.css");
+static STYLESHEET: &str = include_str!("../res/landing_style.css");
 
 fn get_contact_html(addon_name: &str, email: &str) -> String {
-    format!(r#"
+    format!(
+        r#"
         <div class="contact">
             <p>Contact {} creator:</p>
             <a href="mailto:{email}">{email}</a>
         </div>
-    "#, addon_name, email = email)
+    "#,
+        addon_name,
+        email = email
+    )
 }
 
 // "taylor" => "Taylor"
@@ -21,32 +27,38 @@ fn make_ascii_sentence_case(s: &mut str) {
 }
 
 pub fn landing_template(manifest: &Manifest) -> String {
-    let background = manifest.background.as_deref()
-        .unwrap_or("https://dl.strem.io/addon-background.jpg");
-
-    let logo = manifest.logo.as_deref()
-        .unwrap_or("https://dl.strem.io/addon-logo.png");
-
-    let contact_html = manifest.contact_email.as_ref().map(|email| {
-        get_contact_html(&manifest.name, email)
-    }).unwrap_or_default();
-
+    let background = manifest
+        .background
+        .clone()
+        .unwrap_or(Url::from_str("https://dl.strem.io/addon-background.jpg").unwrap());
+    let logo = manifest
+        .logo
+        .clone()
+        .unwrap_or(Url::from_str("https://dl.strem.io/addon-logo.png").unwrap());
+    let contact_html = manifest
+        .contact_email
+        .as_ref()
+        .map(|email| get_contact_html(&manifest.name, email))
+        .unwrap_or_default();
     let description = manifest.description.as_deref().unwrap_or_default();
-
     let version = manifest.version.to_string();
-    
     let types = manifest
         .types
         .clone()
         .into_iter()
         .map(|mut type_| {
             make_ascii_sentence_case(&mut type_);
-            format!("<li>{}{}</li>", type_, if type_ != "Series" { "s" } else {""})
+            format!(
+                "<li>{}{}</li>",
+                type_,
+                if type_ != "Series" { "s" } else { "" }
+            )
         })
         .collect::<Vec<_>>()
         .join("");
 
-    format!(r#"
+    format!(
+        r#"
 
         <!DOCTYPE html>
         <html style="background-image: url({background});">
@@ -90,7 +102,7 @@ pub fn landing_template(manifest: &Manifest) -> String {
         "#,
         background = background,
         name = manifest.name,
-        stylesheet = STYLESHEET, 
+        stylesheet = STYLESHEET,
         logo = logo,
         version = version,
         description = description,

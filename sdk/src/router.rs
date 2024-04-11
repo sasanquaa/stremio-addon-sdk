@@ -1,144 +1,167 @@
-use super::landing_template::landing_template;
-use stremio_core::types::addons::Manifest;
-use hyper::{Response, Request, Body, StatusCode, header, Method};
-use serde_json;
-use now_lambda::IntoResponse;
-use super::server::ServerOptions;
-use super::builder::BuilderWithHandlers;
-use super::builder::AddonRouter;
-use futures::stream::Stream;
-use futures::future::Future;
+use std::fmt::{Debug, Display, Formatter};
+use std::future;
+use std::future::Future;
 
-pub type Result<T> = std::result::Result<T, RouterError>;
+use futures::FutureExt;
+use hyper::{header, HeaderMap, Method, Request, Response, StatusCode};
+use hyper::header::HeaderValue;
+use stremio_core::constants::ADDON_MANIFEST_PATH;
+use stremio_core::types::addon::{Manifest, ResourcePath};
+
+use crate::builder::Handler;
+use crate::landing::landing_template;
+
+use super::server::ServerOptions;
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
-pub enum RouterError {
-    HttpError(hyper::http::Error),
-    SerdeError(serde_json::Error),
+pub enum Error {
+    Http(hyper::http::Error),
+    Serde(serde_json::Error),
 }
 
-pub struct RouterResponse {
-    response: Response<Body>
-}
-// implement now.sh lambda response trait
-impl IntoResponse for RouterResponse {
-    // convert Hyper Response to Now.sh Response
-    fn into_response(self) -> Response<now_lambda::Body> {
-        let (parts, body) = self.response.into_parts();
+impl std::error::Error for Error {}
 
-        // get original response body as bytes array
-        let bytes = body
-            .concat2()
-            .wait()
-            // at least log error
-            .map_err(|error| eprintln!("into_response error: {}", error))
-            .unwrap()
-            .into_bytes();
-        let mut bytes_array: Vec<u8> = vec![];
-        bytes_array.extend_from_slice(&*bytes);
-       
-        Response::from_parts(parts, now_lambda::Body::from(bytes_array))
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::Http(err) => Display::fmt(err, f),
+            Error::Serde(err) => Display::fmt(err, f),
+        }
     }
 }
-// read RouterResponse from Hyper Response
-impl From<Response<Body>> for RouterResponse {
-    fn from(response: Response<Body>) -> RouterResponse {
-        Self {response}
-    }
-}
-impl RouterResponse {
-    pub fn response(self) -> Response<Body> {
-        self.response
-    }
 
-    pub fn response_serverless(self) -> Response<now_lambda::Body> {
-        self.into_response()
-    }
+enum ResponseKind {
+    Json(String),
+    Html(String),
+    NotFound,
+    MethodNotAllowed,
+    Manifest,
 }
 
 pub struct Router {
-    build: BuilderWithHandlers,
-    options: ServerOptions
+    manifest: Manifest,
+    handlers: Vec<Handler>,
+    options: ServerOptions,
 }
+
 impl Router {
-    pub fn new(build: BuilderWithHandlers, options: ServerOptions) -> Self {
-        Self {build, options}
-    }
-
-    fn get_manifest(&self) -> &Manifest {
-        self.build.handlers[0].get_manifest()
-    }
-
-    fn json_response(&self, json: String) -> Result<Response<Body>> {
-        Response::builder()
-            .status(StatusCode::OK)
-            .header("access-control-allow-origin", "*") // CORS
-            .header("Cache-Control", format!("max-age={}, public", self.options.cache_max_age)) // cache
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(json))
-            .map_err(RouterError::HttpError)
-    }
-
-    fn html_response(&self, html: String) -> Result<Response<Body>> {
-        Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "text/html")
-            .body(Body::from(html))
-            .map_err(RouterError::HttpError)
-    }
-
-    fn not_found(&self) -> Result<Response<Body>> {
-        Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .body(Body::from("Not Found"))
-            .map_err(RouterError::HttpError)
-    }
-
-    fn method_not_allowed(&self) -> Result<Response<Body>> {
-        Response::builder()
-            .status(StatusCode::METHOD_NOT_ALLOWED)
-            .body(Body::from("Method not allowed"))
-            .map_err(RouterError::HttpError)
-    }
-
-    pub fn handle_manifest(&self) -> Result<Response<Body>> {
-        let json = serde_json::to_string(self.get_manifest())
-            .map_err(RouterError::SerdeError)?;
-        self.json_response(json)
-    }
-
-    pub fn handle_resource(&self, path: &str) -> Result<Response<Body>> {
-        let res = match self.build.handle(path) {
-			Some(res) => res,
-			None => return self.not_found()
-        };
-
-        let json = serde_json::to_string(&res)
-            .map_err(RouterError::SerdeError)?;
-        self.json_response(json)
-    }
-
-    pub fn handle_landing(&self, template: String) -> Result<Response<Body>> {
-        self.html_response(template)
-    }
-
-    pub fn handle_default_landing(&self) -> Result<Response<Body>> {
-        self.handle_landing(landing_template(self.get_manifest()))
-    }
-
-    pub fn route<T>(&self, request: Request<T>) -> Result<RouterResponse> {
-        if request.method() != Method::GET {
-            return Ok(RouterResponse::from(self.method_not_allowed()?));
+    pub fn new(manifest: Manifest, handlers: Vec<Handler>, options: ServerOptions) -> Self {
+        Self {
+            manifest,
+            handlers,
+            options,
         }
+    }
 
-        let path = request.uri().path();
-        
-        Ok(RouterResponse::from(
-            match path {
-                "/manifest.json" => self.handle_manifest()?,
-                "/" => self.handle_default_landing()?,
-                _ => self.handle_resource(path)?,
+    pub fn route<T>(
+        &self,
+        request: Request<T>,
+    ) -> Box<dyn Future<Output = Result<Response<String>>> + Send + Unpin + '_> {
+        if request.method() != Method::GET {
+            return Box::new(future::ready(
+                self.response_from(ResponseKind::MethodNotAllowed),
+            ));
+        }
+        return match request.uri().path() {
+            p if p == "/" => Box::new(future::ready(
+                self.response_from(ResponseKind::Html(landing_template(self.manifest()))),
+            )),
+            p if p == ADDON_MANIFEST_PATH => {
+                Box::new(future::ready(self.response_from(ResponseKind::Manifest)))
             }
-        ))
+            p => {
+                let parts = p.split('/').collect::<Vec<&str>>();
+                let path = if parts.len() == 4 {
+                    ResourcePath::with_extra(parts[0], parts[1], parts[2], &[])
+                } else {
+                    ResourcePath::without_extra(parts[0], parts[1], parts[2])
+                };
+                let handler = self
+                    .handlers
+                    .iter()
+                    .find(|&handler| p.starts_with(format!("/{}", handler.name).as_str()))
+                    .ok_or_else(|| self.response_from(ResponseKind::NotFound).unwrap_err());
+                if let Ok(handler) = handler {
+                    self.resource_from_handler(&path, handler)
+                } else {
+                    Box::new(future::ready(Err(handler.err().unwrap())))
+                }
+            }
+        };
+    }
+
+    fn manifest(&self) -> &Manifest {
+        &self.manifest
+    }
+
+    fn resource_from_handler(
+        &self,
+        path: &ResourcePath,
+        handler: &Handler,
+    ) -> Box<dyn Future<Output = Result<Response<String>>> + Send + Unpin + '_> {
+        Box::new((handler.func)(path).map(|option| {
+            if let Some(resource) = option {
+                serde_json::to_string(&resource)
+                    .map(|str| self.response_from(ResponseKind::Json(str)).unwrap())
+                    .map_err(Error::Serde)
+            } else {
+                self.response_from(ResponseKind::NotFound)
+            }
+        }))
+    }
+
+    fn response_from(&self, kind: ResponseKind) -> Result<Response<String>> {
+        let body = match &kind {
+            ResponseKind::Json(str) => str.to_string(),
+            ResponseKind::Html(str) => str.to_string(),
+            ResponseKind::NotFound => "Not Found".to_string(),
+            ResponseKind::MethodNotAllowed => "Method Not Allowed".to_string(),
+            ResponseKind::Manifest => {
+                serde_json::to_string(self.manifest()).map_err(Error::Serde)?
+            }
+        };
+        let code = match &kind {
+            ResponseKind::Manifest | ResponseKind::Html(_) | ResponseKind::Json(_) => {
+                StatusCode::OK
+            }
+            ResponseKind::NotFound => StatusCode::NOT_FOUND,
+            ResponseKind::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
+        };
+        let mut builder = Response::builder().status(code);
+        builder
+            .headers_mut()
+            .unwrap()
+            .extend(self.header_map_from(&kind));
+        builder.body(body).map_err(Error::Http)
+    }
+
+    fn header_map_from(&self, kind: &ResponseKind) -> HeaderMap {
+        let mut headers_map = HeaderMap::new();
+        match kind {
+            ResponseKind::Manifest | ResponseKind::Json(_) => {
+                headers_map.append(
+                    header::ACCESS_CONTROL_ALLOW_ORIGIN,
+                    HeaderValue::from_static("*"),
+                );
+                headers_map.append(
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_str(
+                        format!("max-age={}, public", self.options.cache_max_age).as_str(),
+                    )
+                    .unwrap(),
+                );
+                headers_map.append(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/json"),
+                );
+            }
+            ResponseKind::Html(_) => {
+                headers_map.append(header::CONTENT_TYPE, HeaderValue::from_static("text/html"));
+            }
+            ResponseKind::MethodNotAllowed | ResponseKind::NotFound => (),
+        };
+        headers_map
     }
 }

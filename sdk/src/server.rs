@@ -1,66 +1,48 @@
+use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use hyper::{Request, Response, StatusCode, Body};
-use hyper::server::conn::AddrStream;
-use hyper::service::{make_service_fn, service_fn_ok};
-use hyper::server::Server;
-use hyper::rt::Future;
-use super::router::Router;
-use super::builder::BuilderWithHandlers;
+use std::sync::Arc;
+
+use hyper::{body, Request};
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper_util::rt::TokioIo;
+use tokio::net::TcpListener;
+
+use super::builder::Builder;
 
 #[derive(Debug, Clone)]
 pub struct ServerOptions {
+    pub ip: IpAddr,
     pub port: u16,
     pub cache_max_age: i32,
-    pub ip: IpAddr,
 }
+
 impl Default for ServerOptions {
     fn default() -> Self {
         Self {
-            // cache 3 days
-            cache_max_age: 24 * 3600 * 3,
-            port: 7070,
             ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            port: 7070,
+            cache_max_age: 24 * 3600 * 3, // cache 3 days
         }
     }
 }
 
-pub fn serve_http(build: BuilderWithHandlers, options: ServerOptions) {
+pub async fn serve_http(builder: Builder, options: ServerOptions) -> io::Result<()> {
     let addr = SocketAddr::new(options.ip, options.port);
-    
-    let service = make_service_fn(move |_: &AddrStream| {
-        let router = Router::new(build.clone(), options.clone());
-        service_fn_ok(move |req: Request<Body>| {
-            match router.route(req) {
-                Ok(router_response) => router_response.response(),
-                Err(error) => {
-                    eprintln!("service error: {:?}", error);
-                    let mut response = Response::new(Body::empty());
-                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                    response
-                }
+    let listener = TcpListener::bind(addr).await?;
+
+    loop {
+        let stream = listener.accept().await?.0;
+        let io = TokioIo::new(stream);
+        let router = Arc::new(builder.clone().build(options.clone()));
+        let service = service_fn(move |req: Request<body::Incoming>| {
+            let router_clone = router.clone();
+            async move { router_clone.route(req).await }
+        });
+        tokio::task::spawn(async move {
+            if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
+                eprintln!("connection error: {:?}", err);
             }
-        })
-    });
-
-    let server = Server::bind(&addr)
-        .serve(service)
-        .map_err(|e| eprintln!("server error: {}", e));
-
-    println!("Running on: {}", addr);
-
-    hyper::rt::run(server)
-}
-
-pub fn serve_serverless(
-    req: now_lambda::Request, build: BuilderWithHandlers, options: ServerOptions
-) -> Result<impl now_lambda::IntoResponse, now_lambda::error::NowError> {
-    let router = Router::new(build, options);
-    match router.route(req) {
-        Ok(router_response) => Ok(router_response),
-        Err(error) => {
-            let error_message = format!("service error: {:?}", error);
-            eprintln!("{}", error_message);
-            Err(now_lambda::error::NowError::new(&error_message))
-        }
+        });
     }
 }
