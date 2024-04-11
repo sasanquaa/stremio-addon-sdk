@@ -61,11 +61,15 @@ impl Router {
             "/" => self.response_from(ResponseKind::Html("<html></html>".to_string())),
             ADDON_MANIFEST_PATH => self.response_from(ResponseKind::Manifest),
             p => {
-                let parts = p.split('/').collect::<Vec<&str>>();
+                let parts = p.split('/').skip(1).collect::<Vec<&str>>();
                 let path = if parts.len() == 4 {
                     ResourcePath::with_extra(parts[0], parts[1], parts[2], &[])
                 } else {
-                    ResourcePath::without_extra(parts[0], parts[1], parts[2])
+                    ResourcePath::without_extra(
+                        parts[0],
+                        parts[1],
+                        parts[2].replace(".json", "").as_str(),
+                    )
                 };
                 let handler = self
                     .handlers

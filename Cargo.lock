@@ -305,6 +305,7 @@ dependencies = [
  "stremio-addon-sdk",
  "stremio-core",
  "tokio",
+ "url",
 ]
 
 [[package]]

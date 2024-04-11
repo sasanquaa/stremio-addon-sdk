@@ -65,7 +65,7 @@ impl Builder {
         self
     }
 
-    pub fn build(self, options: ServerOptions) -> Router {
+    pub(crate) fn build(self, options: ServerOptions) -> Router {
         self.validate();
         Router::new(self.manifest, self.handlers, options)
     }
