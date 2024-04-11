@@ -1,0 +1,11 @@
+[package]
+name = "example-addon"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+stremio-core = { git = "https://github.com/stremio/stremio-core" }
+stremio-addon-sdk = { path = "../sdk" }
+tokio = { version = "1.37.0", features = ["full"] }

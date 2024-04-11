@@ -2,9 +2,9 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
+use hyper::{body, Request};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::{body, Request};
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
@@ -30,12 +30,13 @@ impl Default for ServerOptions {
 pub async fn serve_http(builder: Builder, options: ServerOptions) -> io::Result<()> {
     let addr = SocketAddr::new(options.ip, options.port);
     let listener = TcpListener::bind(addr).await?;
-
+    println!("Running on: {}", addr);
     loop {
         let stream = listener.accept().await?.0;
         let io = TokioIo::new(stream);
         let router = Arc::new(builder.clone().build(options.clone()));
         let service = service_fn(move |req: Request<body::Incoming>| {
+            println!("Incoming request: {}", req.uri());
             let router_clone = router.clone();
             async move { router_clone.route(req).await }
         });

@@ -1,24 +1,21 @@
 use std::fmt::{Debug, Display, Formatter};
-use std::future;
-use std::future::Future;
 
-use futures::FutureExt;
 use hyper::{header, HeaderMap, Method, Request, Response, StatusCode};
 use hyper::header::HeaderValue;
 use stremio_core::constants::ADDON_MANIFEST_PATH;
 use stremio_core::types::addon::{Manifest, ResourcePath};
 
 use crate::builder::Handler;
-use crate::landing::landing_template;
 
 use super::server::ServerOptions;
 
-pub type Result<T> = std::result::Result<T, Error>;
+type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
     Http(hyper::http::Error),
     Serde(serde_json::Error),
+    ResourceNotFound,
 }
 
 impl std::error::Error for Error {}
@@ -28,6 +25,7 @@ impl Display for Error {
         match self {
             Error::Http(err) => Display::fmt(err, f),
             Error::Serde(err) => Display::fmt(err, f),
+            Error::ResourceNotFound => f.write_str("ResourceNotFound"),
         }
     }
 }
@@ -55,22 +53,13 @@ impl Router {
         }
     }
 
-    pub fn route<T>(
-        &self,
-        request: Request<T>,
-    ) -> Box<dyn Future<Output = Result<Response<String>>> + Send + Unpin + '_> {
+    pub async fn route<T>(&self, request: Request<T>) -> Result<Response<String>> {
         if request.method() != Method::GET {
-            return Box::new(future::ready(
-                self.response_from(ResponseKind::MethodNotAllowed),
-            ));
+            return self.response_from(ResponseKind::MethodNotAllowed);
         }
         return match request.uri().path() {
-            "/" => Box::new(future::ready(
-                self.response_from(ResponseKind::Html(landing_template(self.manifest()))),
-            )),
-            ADDON_MANIFEST_PATH => {
-                Box::new(future::ready(self.response_from(ResponseKind::Manifest)))
-            }
+            "/" => self.response_from(ResponseKind::Html("<html></html>".to_string())),
+            ADDON_MANIFEST_PATH => self.response_from(ResponseKind::Manifest),
             p => {
                 let parts = p.split('/').collect::<Vec<&str>>();
                 let path = if parts.len() == 4 {
@@ -81,35 +70,22 @@ impl Router {
                 let handler = self
                     .handlers
                     .iter()
-                    .find(|&handler| p.starts_with(format!("/{}", handler.name).as_str()))
-                    .ok_or_else(|| self.response_from(ResponseKind::NotFound).unwrap_err());
-                if let Ok(handler) = handler {
-                    self.resource_from_handler(&path, handler)
-                } else {
-                    Box::new(future::ready(Err(handler.err().unwrap())))
+                    .find(|&handler| p.starts_with(format!("/{}", handler.name).as_str()));
+                if handler.is_none() {
+                    return self.response_from(ResponseKind::NotFound);
                 }
+                let str = (handler.unwrap().func)(&path)
+                    .await
+                    .map_or(Err(Error::ResourceNotFound), |path| {
+                        serde_json::to_string(&path).map_err(Error::Serde)
+                    })?;
+                self.response_from(ResponseKind::Json(str))
             }
         };
     }
 
     fn manifest(&self) -> &Manifest {
         &self.manifest
-    }
-
-    fn resource_from_handler(
-        &self,
-        path: &ResourcePath,
-        handler: &Handler,
-    ) -> Box<dyn Future<Output = Result<Response<String>>> + Send + Unpin + '_> {
-        Box::new((handler.func)(path).map(|option| {
-            if let Some(resource) = option {
-                serde_json::to_string(&resource)
-                    .map(|str| self.response_from(ResponseKind::Json(str)).unwrap())
-                    .map_err(Error::Serde)
-            } else {
-                self.response_from(ResponseKind::NotFound)
-            }
-        }))
     }
 
     fn response_from(&self, kind: ResponseKind) -> Result<Response<String>> {

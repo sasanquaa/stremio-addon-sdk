@@ -10,10 +10,8 @@ use stremio_core::types::addon::{Manifest, ManifestResource, ResourcePath, Resou
 use crate::router::Router;
 use crate::server::ServerOptions;
 
-type HandlerFn = dyn Fn(&ResourcePath) -> Pin<Box<dyn Future<Output = Option<ResourceResponse>> + Send>>
-    + Send
-    + Sync
-    + 'static;
+type HandlerFuture = dyn Future<Output = Option<ResourceResponse>> + Send;
+type HandlerFn = dyn Fn(&ResourcePath) -> Pin<Box<HandlerFuture>> + Send + Sync + 'static;
 
 #[derive(Clone)]
 pub struct Handler {
@@ -55,10 +53,7 @@ impl Builder {
 
     pub fn handler<F>(mut self, kind: HandlerKind, handler: F) -> Self
     where
-        F: Fn(&ResourcePath) -> Pin<Box<dyn Future<Output = Option<ResourceResponse>> + Send>>
-            + Send
-            + Sync
-            + 'static,
+        F: Fn(&ResourcePath) -> Pin<Box<HandlerFuture>> + Send + Sync + 'static,
     {
         if self.handlers.iter().any(|h| h.name == kind.as_str()) {
             panic!("handler for resource {} is already defined!", kind.as_str());
@@ -96,20 +91,11 @@ impl Builder {
         }
         // check if defined handlers are also specified in the manifest
         for handler in &self.handlers {
-            if !handler_names
-                .iter()
-                .any(|name| name.to_string() == handler.name)
-            {
-                if handler.name == HandlerKind::Catalog.as_str() {
-                    errors.push(
-                        "manifest.catalogs is empty, catalog handler will never be called".into(),
-                    );
-                } else {
-                    errors.push(format!(
-                        "manifest.resources does not contain: {}",
-                        handler.name
-                    ));
-                }
+            if !handler_names.iter().any(|name| *name == handler.name) {
+                errors.push(format!(
+                    "manifest.resources does not contain: {}",
+                    handler.name
+                ));
             }
         }
         // check if handlers that are specified in the manifest are also defined
@@ -123,7 +109,7 @@ impl Builder {
         }
         if !errors.is_empty() {
             let error = errors.join("\n");
-            let error_formatted = format!("\n--failed to build addon interface-- \n {}", error);
+            let error_formatted = format!("\n--failed to build addon interface-- \n{}", error);
             panic!("{}", error_formatted);
         }
     }
