@@ -3,7 +3,7 @@ use std::fmt::{Debug, Display, Formatter};
 use hyper::{header, HeaderMap, Method, Request, Response, StatusCode};
 use hyper::header::HeaderValue;
 use stremio_core::constants::ADDON_MANIFEST_PATH;
-use stremio_core::types::addon::{Manifest, ResourcePath};
+use stremio_core::types::addon::{ExtraValue, Manifest, ResourcePath};
 
 use crate::builder::Handler;
 
@@ -38,6 +38,7 @@ enum ResponseKind {
     Manifest,
 }
 
+#[derive(Clone)]
 pub struct Router {
     manifest: Manifest,
     handlers: Vec<Handler>,
@@ -63,7 +64,23 @@ impl Router {
             p => {
                 let parts = p.split('/').skip(1).collect::<Vec<&str>>();
                 let path = if parts.len() == 4 {
-                    ResourcePath::with_extra(parts[0], parts[1], parts[2], &[])
+                    ResourcePath::with_extra(
+                        parts[0],
+                        parts[1],
+                        parts[2],
+                        parts[3]
+                            .split('&')
+                            .map(|part| {
+                                let extra = part.split('=').collect::<Vec<&str>>();
+                                ExtraValue {
+                                    name: extra[0].to_string(),
+                                    value: extra[1].to_string(),
+                                }
+                            })
+                            .collect::<Vec<ExtraValue>>()
+                            .iter()
+                            .as_ref(),
+                    )
                 } else {
                     ResourcePath::without_extra(
                         parts[0],
@@ -90,6 +107,10 @@ impl Router {
 
     fn manifest(&self) -> &Manifest {
         &self.manifest
+    }
+
+    pub(crate) fn server_options(&self) -> &ServerOptions {
+        &self.options
     }
 
     fn response_from(&self, kind: ResponseKind) -> Result<Response<String>> {

@@ -17,10 +17,11 @@ async fn main() -> io::Result<()> {
         resources: vec![ManifestResource::Short("stream".into())],
         types: vec!["movie".into()],
         catalogs: vec![],
+        background: Some(Url::parse("https://i.imgur.com/P3JQEmD.jpg").unwrap()),
+        logo: Some(Url::parse("https://i.imgur.com/M6pQlDh.jpg").unwrap()),
         ..utils::default_manifest()
     };
-    serve_http(
-        Builder::new(manifest).handler(HandlerKind::Stream, |req| {
+    let router = Builder::new(manifest).handler(HandlerKind::Stream, |req| {
             println!("Stream: {}/{}/{}", req.resource, req.r#type, req.id);
             if req.r#type == "movie" && req.id == "tt1254207" {
                 Box::pin(future::ready(Some(ResourceResponse::Streams {
@@ -40,8 +41,6 @@ async fn main() -> io::Result<()> {
                     streams: vec![],
                 })))
             }
-        }),
-        ServerOptions::default(),
-    )
-    .await
+        }).build(ServerOptions::default());
+    serve_http(router).await
 }

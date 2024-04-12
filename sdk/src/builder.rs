@@ -1,7 +1,6 @@
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
+use futures::future::BoxFuture;
 use stremio_core::constants::{
     CATALOG_RESOURCE_NAME, META_RESOURCE_NAME, STREAM_RESOURCE_NAME, SUBTITLES_RESOURCE_NAME,
 };
@@ -10,8 +9,8 @@ use stremio_core::types::addon::{Manifest, ManifestResource, ResourcePath, Resou
 use crate::router::Router;
 use crate::server::ServerOptions;
 
-type HandlerFuture = dyn Future<Output = Option<ResourceResponse>> + Send;
-type HandlerFn = dyn Fn(&ResourcePath) -> Pin<Box<HandlerFuture>> + Send + Sync + 'static;
+type HandlerFn =
+    dyn Fn(&ResourcePath) -> BoxFuture<Option<ResourceResponse>> + Send + Sync + 'static;
 
 #[derive(Clone)]
 pub struct Handler {
@@ -37,7 +36,6 @@ impl HandlerKind {
     }
 }
 
-#[derive(Clone)]
 pub struct Builder {
     manifest: Manifest,
     handlers: Vec<Handler>,
@@ -53,7 +51,7 @@ impl Builder {
 
     pub fn handler<F>(mut self, kind: HandlerKind, handler: F) -> Self
     where
-        F: Fn(&ResourcePath) -> Pin<Box<HandlerFuture>> + Send + Sync + 'static,
+        F: Fn(&ResourcePath) -> BoxFuture<Option<ResourceResponse>> + Send + Sync + 'static,
     {
         if self.handlers.iter().any(|h| h.name == kind.as_str()) {
             panic!("handler for resource {} is already defined!", kind.as_str());
@@ -65,7 +63,7 @@ impl Builder {
         self
     }
 
-    pub(crate) fn build(self, options: ServerOptions) -> Router {
+    pub fn build(self, options: ServerOptions) -> Router {
         self.validate();
         Router::new(self.manifest, self.handlers, options)
     }

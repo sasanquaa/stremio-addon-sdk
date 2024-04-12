@@ -5,8 +5,6 @@
 
 <h4 align="center">Rust version of the <a href="https://github.com/Stremio/stremio-addon-sdk" target="_blak">stremio-addon-sdk</a> using <a href="https://github.com/Stremio/stremio-core" target="_blank">stremio-core</a></h4>
 
-This is an **unofficial** SDK for building [stremio](https://www.stremio.com/) addons. If you're totally new to addon building, it's recommended to start reading the [offical stremio addon SDK docs](https://github.com/Stremio/stremio-addon-sdk/tree/master/docs) to get a basic understanding of how addons work. This SDK is meant to step up your game if you want to make use of Rust's powerfull type system and performance.
-
 ## Getting started
 ```rust
 use stremio_addon_sdk::builder::Builder;
@@ -36,19 +34,7 @@ async fn main() {
 }
 ```
 
-See the [example-addon](example-addon) for more details or take a look at the [documentation](https://github.com/sleeyax/stremio-addon-sdk/wiki/Addon).
-
-## FAQ
-* How do I host my addon?
-    * [now.sh](https://zeit.co/home) deployments are [supported](https://github.com/sleeyax/stremio-addon-sdk/wiki/Now).
-    * [heroku](https://dashboard.heroku.com) deployments are [supported](https://github.com/sleeyax/stremio-addon-sdk/wiki/Heroku).
-* Why would I use this over the official SDK?
-    * You tell me. Types, speed & stremio-core are my reasons ;)
-* How do I publish my addon?
-    * Use [this website](https://stremio.github.io/stremio-publish-addon/) to publish your addon to the public Stremio addon collection.
+See the [example-addon](example-addon) for more details.
 
 ## Documentation
-Documentation can be found [here](https://github.com/sleeyax/stremio-addon-sdk/wiki).
-
-## Related projects
-#### If you're a gopher, check out the [Stremio addon SDK for Go](https://github.com/Deflix-tv/go-stremio).
+TODO
