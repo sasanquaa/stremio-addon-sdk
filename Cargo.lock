@@ -376,7 +376,6 @@ name = "example-addon"
 version = "0.1.0"
 dependencies = [
  "futures",
- "hyper 1.2.0",
  "stremio-addon-sdk",
  "stremio-core",
  "tokio",

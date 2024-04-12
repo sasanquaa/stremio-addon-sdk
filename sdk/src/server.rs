@@ -8,6 +8,7 @@ use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 use vercel_runtime::Body;
 
+use crate::{SdkRequest, SdkResponse};
 use crate::router::Router;
 
 #[derive(Debug, Clone)]
@@ -29,7 +30,7 @@ impl Default for ServerOptions {
     }
 }
 
-pub async fn serve_http(router: Router) -> Result<hyper::Response<String>, Box<dyn Error>> {
+pub async fn serve_http(router: Router) -> Result<SdkResponse<String>, Box<dyn Error>> {
     let options = router.server_options();
     let addr = SocketAddr::new(options.ip, options.port);
     let listener = TcpListener::bind(addr).await?;
@@ -38,7 +39,7 @@ pub async fn serve_http(router: Router) -> Result<hyper::Response<String>, Box<d
         let stream = listener.accept().await?.0;
         let io = TokioIo::new(stream);
         let router_arc = Arc::new(router.clone());
-        let service = service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
+        let service = service_fn(move |req: SdkRequest<hyper::body::Incoming>| {
             println!("Incoming request: {}", req.uri());
             let router_arc_clone = router_arc.clone();
             async move { router_arc_clone.route(req).await }
@@ -52,9 +53,9 @@ pub async fn serve_http(router: Router) -> Result<hyper::Response<String>, Box<d
 }
 
 pub async fn serve_serverless(
-    request: hyper::Request<Body>,
+    request: SdkRequest<Body>,
     router: Router,
-) -> Result<hyper::Response<Body>, Box<dyn Error>> {
+) -> Result<SdkResponse<Body>, Box<dyn Error>> {
     router
         .route(request)
         .await

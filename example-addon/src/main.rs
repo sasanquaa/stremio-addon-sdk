@@ -7,6 +7,7 @@ use stremio_core::types::resource::{Stream, StreamSource};
 use url::Url;
 use vercel_runtime::Body;
 
+use stremio_addon_sdk::{SdkRequest, SdkResponse};
 use stremio_addon_sdk::builder::{Builder, HandlerKind};
 use stremio_addon_sdk::router::Router;
 use stremio_addon_sdk::server::{serve_http, serve_serverless, ServerOptions};
@@ -61,7 +62,7 @@ async fn handler_http() -> Result<(), Box<dyn Error>> {
 }
 
 pub async fn handler_serverless(
-    req: hyper::Request<Body>,
-) -> Result<hyper::Response<Body>, Box<dyn Error>> {
+    req: SdkRequest<Body>,
+) -> Result<SdkResponse<Body>, Box<dyn Error>> {
     serve_serverless(req, create_router()).await
 }

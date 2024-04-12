@@ -1,10 +1,11 @@
 use std::fmt::{Debug, Display, Formatter};
 
-use hyper::{header, HeaderMap, Method, Request, Response, StatusCode};
+use hyper::{header, HeaderMap, Method, StatusCode};
 use hyper::header::HeaderValue;
 use stremio_core::constants::ADDON_MANIFEST_PATH;
 use stremio_core::types::addon::{ExtraValue, Manifest, ResourcePath};
 
+use crate::{SdkRequest, SdkResponse};
 use crate::builder::Handler;
 
 use super::server::ServerOptions;
@@ -60,7 +61,7 @@ impl Router {
         }
     }
 
-    pub(crate) async fn route<T>(&self, request: Request<T>) -> Result<Response<String>> {
+    pub(crate) async fn route<T>(&self, request: SdkRequest<T>) -> Result<SdkResponse<String>> {
         if request.method() != Method::GET {
             return self.response_from(ResponseKind::MethodNotAllowed);
         }
@@ -122,7 +123,7 @@ impl Router {
         &self.manifest
     }
 
-    fn response_from(&self, kind: ResponseKind) -> Result<Response<String>> {
+    fn response_from(&self, kind: ResponseKind) -> Result<SdkResponse<String>> {
         let body = match &kind {
             ResponseKind::Json(str) => str.to_string(),
             ResponseKind::Html(str) => str.to_string(),
@@ -141,7 +142,7 @@ impl Router {
             ResponseKind::NotFound => StatusCode::NOT_FOUND,
             ResponseKind::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
         };
-        let mut builder = Response::builder().status(code);
+        let mut builder = SdkResponse::builder().status(code);
         builder
             .headers_mut()
             .unwrap()
