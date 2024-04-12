@@ -6,23 +6,26 @@ use url::Url;
 
 use stremio_addon_sdk::builder::{Builder, HandlerKind};
 use stremio_addon_sdk::server::{serve_http, ServerOptions};
-use stremio_addon_sdk::utils;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let manifest = Manifest {
-        id: "org.example.addon".to_string(),
+        id: "org.example.addon".into(),
         version: Version::new(1, 0, 0),
-        name: "Example".to_string(),
+        name: "Example".into(),
+        contact_email: None,
         resources: vec![ManifestResource::Short("stream".into())],
         types: vec!["movie".into()],
         catalogs: vec![],
+        addon_catalogs: vec![],
         background: Some(Url::parse("https://i.imgur.com/P3JQEmD.jpg").unwrap()),
         logo: Some(Url::parse("https://i.imgur.com/M6pQlDh.jpg").unwrap()),
-        ..utils::default_manifest()
+        description: Some("Example Addon".into()),
+        id_prefixes: None,
+        behavior_hints: Default::default(),
     };
     let router = Builder::new(manifest).handler(HandlerKind::Stream, |req| {
-            println!("Stream: {}/{}/{}", req.resource, req.r#type, req.id);
+            println!("Stream: {}/{}/{}/{:?}", req.resource, req.r#type, req.id, req.extra);
             if req.r#type == "movie" && req.id == "tt1254207" {
                 Box::pin(future::ready(Some(ResourceResponse::Streams {
                     streams: vec![Stream {

@@ -63,27 +63,26 @@ impl Router {
             ADDON_MANIFEST_PATH => self.response_from(ResponseKind::Manifest),
             p => {
                 let parts = p.split('/').skip(1).collect::<Vec<&str>>();
-                if parts.len() < 3 {
+                if parts.len() < 3 || parts.len() > 4 {
                     return self.response_from(ResponseKind::BadRequest);
                 }
                 let path = if parts.len() == 4 {
-                    ResourcePath::with_extra(
-                        parts[0],
-                        parts[1],
-                        parts[2],
-                        parts[3]
-                            .split('&')
-                            .map(|part| {
-                                let extra = part.split('=').collect::<Vec<&str>>();
-                                ExtraValue {
+                    let extras = parts[3]
+                        .replace(".json", "")
+                        .split('&')
+                        .map_while(|part| {
+                            let extra = part.split('=').collect::<Vec<&str>>();
+                            if extra.len() == 2 {
+                                Some(ExtraValue {
                                     name: extra[0].to_string(),
                                     value: extra[1].to_string(),
-                                }
-                            })
-                            .collect::<Vec<ExtraValue>>()
-                            .iter()
-                            .as_ref(),
-                    )
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<ExtraValue>>();
+                    ResourcePath::with_extra(parts[0], parts[1], parts[2], extras.as_slice())
                 } else {
                     ResourcePath::without_extra(
                         parts[0],
