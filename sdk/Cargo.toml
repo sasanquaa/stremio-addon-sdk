@@ -15,3 +15,4 @@ tokio = { version = "1.37.0", features = ["net", "rt", "macros"] }
 futures = "0.3.30"
 semver = "*"
 url = "2.5.0"
+vercel_runtime = "1.1.1"

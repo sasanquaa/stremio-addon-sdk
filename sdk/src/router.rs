@@ -17,7 +17,14 @@ pub enum Error {
     Serde(serde_json::Error),
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::Http(err) => Some(err),
+            Error::Serde(err) => Some(err),
+        }
+    }
+}
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
