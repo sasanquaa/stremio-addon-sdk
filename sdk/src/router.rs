@@ -32,6 +32,7 @@ impl Display for Error {
 enum ResponseKind {
     Json(String),
     Html(String),
+    BadRequest,
     NotFound,
     MethodNotAllowed,
     Manifest,
@@ -45,7 +46,7 @@ pub struct Router {
 }
 
 impl Router {
-    pub fn new(manifest: Manifest, handlers: Vec<Handler>, options: ServerOptions) -> Self {
+    pub(crate) fn new(manifest: Manifest, handlers: Vec<Handler>, options: ServerOptions) -> Self {
         Self {
             manifest,
             handlers,
@@ -53,7 +54,7 @@ impl Router {
         }
     }
 
-    pub async fn route<T>(&self, request: Request<T>) -> Result<Response<String>> {
+    pub(crate) async fn route<T>(&self, request: Request<T>) -> Result<Response<String>> {
         if request.method() != Method::GET {
             return self.response_from(ResponseKind::MethodNotAllowed);
         }
@@ -62,6 +63,9 @@ impl Router {
             ADDON_MANIFEST_PATH => self.response_from(ResponseKind::Manifest),
             p => {
                 let parts = p.split('/').skip(1).collect::<Vec<&str>>();
+                if parts.len() < 3 {
+                    return self.response_from(ResponseKind::BadRequest);
+                }
                 let path = if parts.len() == 4 {
                     ResourcePath::with_extra(
                         parts[0],
@@ -102,20 +106,21 @@ impl Router {
         };
     }
 
-    fn manifest(&self) -> &Manifest {
-        &self.manifest
-    }
-
     pub(crate) fn server_options(&self) -> &ServerOptions {
         &self.options
+    }
+
+    fn manifest(&self) -> &Manifest {
+        &self.manifest
     }
 
     fn response_from(&self, kind: ResponseKind) -> Result<Response<String>> {
         let body = match &kind {
             ResponseKind::Json(str) => str.to_string(),
             ResponseKind::Html(str) => str.to_string(),
-            ResponseKind::NotFound => "Not Found".to_string(),
             ResponseKind::MethodNotAllowed => "Method Not Allowed".to_string(),
+            ResponseKind::NotFound => "Not Found".to_string(),
+            ResponseKind::BadRequest => "Bad Request".to_string(),
             ResponseKind::Manifest => {
                 serde_json::to_string(self.manifest()).map_err(Error::Serde)?
             }
@@ -124,6 +129,7 @@ impl Router {
             ResponseKind::Manifest | ResponseKind::Html(_) | ResponseKind::Json(_) => {
                 StatusCode::OK
             }
+            ResponseKind::BadRequest => StatusCode::BAD_REQUEST,
             ResponseKind::NotFound => StatusCode::NOT_FOUND,
             ResponseKind::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
         };
@@ -158,8 +164,83 @@ impl Router {
             ResponseKind::Html(_) => {
                 headers_map.append(header::CONTENT_TYPE, HeaderValue::from_static("text/html"));
             }
-            ResponseKind::MethodNotAllowed | ResponseKind::NotFound => (),
+            _ => (),
         };
         headers_map
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use hyper::{header, Request, StatusCode};
+    use hyper::http::HeaderValue;
+
+    use crate::router::Router;
+    use crate::server::ServerOptions;
+    use crate::utils::default_manifest;
+
+    #[tokio::test]
+    async fn response_kind_html_when_initial_path() {
+        let router = Router::new(default_manifest(), vec![], ServerOptions::default());
+        let response = router
+            .route(
+                Request::builder()
+                    .uri("http://127.0.0.1:7070/")
+                    .body(())
+                    .unwrap(),
+            )
+            .await;
+        assert!(response.is_ok());
+        assert_eq!(
+            response
+                .unwrap()
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .unwrap(),
+            HeaderValue::from_static("text/html")
+        );
+    }
+
+    #[tokio::test]
+    async fn response_kind_json_when_manifest_path() {
+        let router = Router::new(default_manifest(), vec![], ServerOptions::default());
+        let response = router
+            .route(
+                Request::builder()
+                    .uri("http://127.0.0.1:7070/manifest.json")
+                    .body(())
+                    .unwrap(),
+            )
+            .await;
+        assert!(response.is_ok());
+        assert_eq!(
+            response
+                .as_ref()
+                .unwrap()
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .unwrap(),
+            HeaderValue::from_static("application/json")
+        );
+        assert_eq!(
+            response.as_ref().unwrap().body(),
+            &serde_json::to_string(&default_manifest()).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn response_kind_bad_request_when_invalid_path() {
+        let router = Router::new(default_manifest(), vec![], ServerOptions::default());
+        let response = router
+            .route(
+                Request::builder()
+                    .uri("http://127.0.0.1:7070/foo/bar")
+                    .body(())
+                    .unwrap(),
+            )
+            .await;
+        assert!(response.is_ok());
+        assert!(response.as_ref().unwrap().headers().is_empty());
+        assert_eq!(response.as_ref().unwrap().status(), StatusCode::BAD_REQUEST);
     }
 }
