@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Display, Formatter};
 
+use futures::future::OptionFuture;
 use hyper::{header, HeaderMap, Method, Request, Response, StatusCode};
 use hyper::header::HeaderValue;
 use stremio_core::constants::ADDON_MANIFEST_PATH;
@@ -15,7 +16,6 @@ type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     Http(hyper::http::Error),
     Serde(serde_json::Error),
-    ResourceNotFound,
 }
 
 impl std::error::Error for Error {}
@@ -25,7 +25,6 @@ impl Display for Error {
         match self {
             Error::Http(err) => Display::fmt(err, f),
             Error::Serde(err) => Display::fmt(err, f),
-            Error::ResourceNotFound => f.write_str("ResourceNotFound"),
         }
     }
 }
@@ -92,15 +91,13 @@ impl Router {
                     .handlers
                     .iter()
                     .find(|&handler| p.starts_with(format!("/{}", handler.name).as_str()));
-                if handler.is_none() {
+                let resource = OptionFuture::from(handler.map(|handler| (handler.func)(&path)))
+                    .await
+                    .map(|path| serde_json::to_string(&path).map_err(Error::Serde));
+                if handler.is_none() || resource.is_none() {
                     return self.response_from(ResponseKind::NotFound);
                 }
-                let str = (handler.unwrap().func)(&path)
-                    .await
-                    .map_or(Err(Error::ResourceNotFound), |path| {
-                        serde_json::to_string(&path).map_err(Error::Serde)
-                    })?;
-                self.response_from(ResponseKind::Json(str))
+                self.response_from(ResponseKind::Json(resource.unwrap()?))
             }
         };
     }
