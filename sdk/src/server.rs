@@ -15,6 +15,7 @@ pub struct ServerOptions {
     pub ip: IpAddr,
     pub port: u16,
     pub cache_max_age: i32,
+    pub landing_html: String,
 }
 
 impl Default for ServerOptions {
@@ -22,7 +23,8 @@ impl Default for ServerOptions {
         Self {
             ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
             port: 7070,
-            cache_max_age: 24 * 3600 * 3, // cache 3 days
+            cache_max_age: 24 * 3600 * 3, // cache 3 days,
+            landing_html: "<html>Hello World</html>".into(),
         }
     }
 }

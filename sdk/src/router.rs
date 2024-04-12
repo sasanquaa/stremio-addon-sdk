@@ -59,7 +59,7 @@ impl Router {
             return self.response_from(ResponseKind::MethodNotAllowed);
         }
         return match request.uri().path() {
-            "/" => self.response_from(ResponseKind::Html("<html></html>".to_string())),
+            "/" => self.response_from(ResponseKind::Html(self.options.landing_html.clone())),
             ADDON_MANIFEST_PATH => self.response_from(ResponseKind::Manifest),
             p => {
                 let parts = p.split('/').skip(1).collect::<Vec<&str>>();

@@ -24,6 +24,7 @@ async fn main() -> io::Result<()> {
         id_prefixes: None,
         behavior_hints: Default::default(),
     };
+    let options = ServerOptions::default();
     let router = Builder::new(manifest).handler(HandlerKind::Stream, |req| {
             println!("Stream: {}/{}/{}/{:?}", req.resource, req.r#type, req.id, req.extra);
             if req.r#type == "movie" && req.id == "tt1254207" {
@@ -44,6 +45,6 @@ async fn main() -> io::Result<()> {
                     streams: vec![],
                 })))
             }
-        }).build(ServerOptions::default());
+        }).build(options);
     serve_http(router).await
 }
