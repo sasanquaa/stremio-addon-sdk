@@ -30,7 +30,9 @@ impl Default for ServerOptions {
     }
 }
 
-pub async fn serve_http(router: Router) -> Result<SdkResponse<String>, Box<dyn Error>> {
+pub async fn serve_http(
+    router: Router,
+) -> Result<SdkResponse<String>, Box<dyn Error + Send + Sync + 'static>> {
     let options = router.server_options();
     let addr = SocketAddr::new(options.ip, options.port);
     let listener = TcpListener::bind(addr).await?;
@@ -55,7 +57,7 @@ pub async fn serve_http(router: Router) -> Result<SdkResponse<String>, Box<dyn E
 pub async fn serve_serverless(
     request: SdkRequest<Body>,
     router: Router,
-) -> Result<SdkResponse<Body>, Box<dyn Error>> {
+) -> Result<SdkResponse<Body>, Box<dyn Error + Send + Sync + 'static>> {
     router
         .route(request)
         .await

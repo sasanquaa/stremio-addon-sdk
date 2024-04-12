@@ -1,20 +1,32 @@
-use std::error::Error;
 use std::future;
 
 use futures::future::BoxFuture;
 use stremio_core::types::addon::{Manifest, ManifestResource, ResourceResponse, Version};
 use stremio_core::types::resource::{Stream, StreamSource};
 use url::Url;
+use vercel_runtime::{Body, Error, Request, Response, run};
 
+use stremio_addon_sdk::{SdkRequest, SdkResponse};
 use stremio_addon_sdk::builder::{Builder, HandlerKind};
-use stremio_addon_sdk::server::{serve_http, ServerOptions};
+use stremio_addon_sdk::server::{serve_serverless, ServerOptions};
+use stremio_addon_sdk::utils::{
+    sdk_response_to_serverless_response, serverless_request_to_sdk_request,
+};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
-    handler_http().await
+async fn main() -> Result<(), Error> {
+    run(handler_serverless).await
 }
 
-async fn handler_http() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+pub async fn handler_serverless(req: Request) -> Result<Response<Body>, Error> {
+    handler_serverless_sdk(serverless_request_to_sdk_request(req))
+        .await
+        .map(sdk_response_to_serverless_response)
+}
+
+pub async fn handler_serverless_sdk(
+    req: SdkRequest<Body>,
+) -> Result<SdkResponse<Body>, Box<dyn std::error::Error + Send + Sync + 'static>> {
     let manifest = Manifest {
         id: "org.example.addon".into(),
         version: Version::new(1, 0, 0),
@@ -52,5 +64,5 @@ async fn handler_http() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             })))
         }
     }).build(options);
-    serve_http(router).await.map(|_| ())
+    serve_serverless(req, router).await
 }
