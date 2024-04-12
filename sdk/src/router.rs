@@ -96,6 +96,7 @@ impl Router {
                     .find(|&handler| p.starts_with(format!("/{}", handler.name).as_str()));
                 let resource = OptionFuture::from(handler.map(|handler| (handler.func)(&path)))
                     .await
+                    .unwrap()
                     .map(|path| serde_json::to_string(&path).map_err(Error::Serde));
                 if handler.is_none() || resource.is_none() {
                     return self.response_from(ResponseKind::NotFound);
@@ -171,12 +172,31 @@ impl Router {
 
 #[cfg(test)]
 mod tests {
+    use std::future;
+    use std::sync::Arc;
+
     use hyper::{header, Request, StatusCode};
     use hyper::http::HeaderValue;
+    use stremio_core::types::addon::ResourcePath;
 
+    use crate::builder::Handler;
     use crate::router::Router;
     use crate::server::ServerOptions;
     use crate::utils::default_manifest;
+
+    #[tokio::test]
+    async fn response_kind_method_not_allowed_when_not_get() {
+        let router = Router::new(default_manifest(), vec![], ServerOptions::default());
+        let response = router
+            .route(Request::builder().method("POST").body(()).unwrap())
+            .await;
+        assert!(response.is_ok());
+        assert!(response.as_ref().unwrap().headers().is_empty());
+        assert_eq!(
+            response.as_ref().unwrap().status(),
+            StatusCode::METHOD_NOT_ALLOWED
+        );
+    }
 
     #[tokio::test]
     async fn response_kind_html_when_initial_path() {
@@ -241,5 +261,42 @@ mod tests {
         assert!(response.is_ok());
         assert!(response.as_ref().unwrap().headers().is_empty());
         assert_eq!(response.as_ref().unwrap().status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn response_kind_not_found_when_no_handler() {
+        let router = Router::new(default_manifest(), vec![], ServerOptions::default());
+        let response = router
+            .route(
+                Request::builder()
+                    .uri("http://127.0.0.1:7070/stream/movie/id")
+                    .body(())
+                    .unwrap(),
+            )
+            .await;
+        assert!(response.is_ok());
+        assert!(response.as_ref().unwrap().headers().is_empty());
+        assert_eq!(response.as_ref().unwrap().status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn response_kind_not_found_when_no_resource() {
+        let handler = Handler {
+            name: "stream".into(),
+            func: Arc::new(|_: &ResourcePath| Box::pin(future::ready(None))),
+        };
+        let router = Router::new(default_manifest(), vec![handler], ServerOptions::default());
+        let response = router
+            .route(
+                Request::builder()
+                    .uri("http://127.0.0.1:7070/stream/movie/id.json")
+                    .body(())
+                    .unwrap(),
+            )
+            .await;
+        println!("{:?}", response);
+        assert!(response.is_ok());
+        assert!(response.as_ref().unwrap().headers().is_empty());
+        assert_eq!(response.as_ref().unwrap().status(), StatusCode::NOT_FOUND);
     }
 }
