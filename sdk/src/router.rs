@@ -1,6 +1,5 @@
 use std::fmt::{Debug, Display, Formatter};
 
-use futures::future::OptionFuture;
 use hyper::{header, HeaderMap, Method, Request, Response, StatusCode};
 use hyper::header::HeaderValue;
 use stremio_core::constants::ADDON_MANIFEST_PATH;
@@ -94,11 +93,13 @@ impl Router {
                     .handlers
                     .iter()
                     .find(|&handler| p.starts_with(format!("/{}", handler.name).as_str()));
-                let resource = OptionFuture::from(handler.map(|handler| (handler.func)(&path)))
+                if handler.is_none() {
+                    return self.response_from(ResponseKind::NotFound);
+                }
+                let resource = (handler.unwrap().func)(&path)
                     .await
-                    .unwrap()
                     .map(|path| serde_json::to_string(&path).map_err(Error::Serde));
-                if handler.is_none() || resource.is_none() {
+                if resource.is_none() {
                     return self.response_from(ResponseKind::NotFound);
                 }
                 self.response_from(ResponseKind::Json(resource.unwrap()?))
