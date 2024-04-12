@@ -7,8 +7,10 @@
 
 ## Getting started
 ```rust
-use stremio_addon_sdk::builder::Builder;
+use std::future;
+use stremio_addon_sdk::builder::{Builder, HandlerKind};
 use stremio_addon_sdk::server::{serve_http, ServerOptions};
+use futures::future::BoxFuture;
 
 #[tokio::main]
 async fn main() {
@@ -16,21 +18,24 @@ async fn main() {
     let manifest = Manifest {
         // ...
     };
+    let options = ServerOptions {
+        // ...
+    };
 
-    // build addon interface
-    let interface = Builder::new(manifest)
+    // build router
+    let router = Builder::new(manifest)
         // function as parameter
-        .define_catalog_handler(handle_catalog)
-        .define_stream_handler(handle_stream)
+        .handler(HandlerKind::Catalog, handle_catalog)
+        .handler(HandlerKind::Stream, handle_stream)
         // closure as parameter
-        .define_meta_handler(|resource: &ResourceRef| -> EnvFuture<ResourceResponse> {
+        .handler(HandlerKind::Meta, |path: &ResourcePath| -> BoxFuture<Option<ResourceResponse>> {
             let response = ResourceResponse::Metas { metas: vec![] };
-            return Box::new(future::ok(response));
+            return Box::pin(future::ready(response));
         })
-        .build();
+        .build(options);
 
     // run HTTP server with default settings
-    serve_http(interface, ServerOptions::default());
+    serve_http(router);
 }
 ```
 

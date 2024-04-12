@@ -1,5 +1,6 @@
 use std::{future, io};
 
+use futures::future::BoxFuture;
 use stremio_core::types::addon::{Manifest, ManifestResource, ResourceResponse, Version};
 use stremio_core::types::resource::{Stream, StreamSource};
 use url::Url;
@@ -25,7 +26,7 @@ async fn main() -> io::Result<()> {
         behavior_hints: Default::default(),
     };
     let options = ServerOptions::default();
-    let router = Builder::new(manifest).handler(HandlerKind::Stream, |req| {
+    let router = Builder::new(manifest).handler(HandlerKind::Stream, |req| -> BoxFuture<Option<ResourceResponse>>{
             println!("Stream: {}/{}/{}/{:?}", req.resource, req.r#type, req.id, req.extra);
             if req.r#type == "movie" && req.id == "tt1254207" {
                 Box::pin(future::ready(Some(ResourceResponse::Streams {

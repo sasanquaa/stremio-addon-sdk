@@ -10,3 +10,4 @@ stremio-core = { git = "https://github.com/stremio/stremio-core" }
 stremio-addon-sdk = { path = "../sdk" }
 tokio = { version = "1.37.0", features = ["full"] }
 url = "2.5.0"
+futures = "0.3.30"
