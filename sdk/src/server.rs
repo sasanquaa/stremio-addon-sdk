@@ -8,7 +8,9 @@ use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 use vercel_runtime::Body;
 
-use crate::{SdkRequest, SdkResponse};
+use crate::request::{HyperRequest, Request, ServerlessRequest};
+use crate::response::{HyperResponse, ServerlessResponse};
+use crate::response::Response;
 use crate::router::Router;
 
 #[derive(Debug, Clone)]
@@ -32,7 +34,7 @@ impl Default for ServerOptions {
 
 pub async fn serve_http(
     router: Router,
-) -> Result<SdkResponse<String>, Box<dyn Error + Send + Sync + 'static>> {
+) -> Result<HyperResponse<String>, Box<dyn Error + Send + Sync + 'static>> {
     let options = router.server_options();
     let addr = SocketAddr::new(options.ip, options.port);
     let listener = TcpListener::bind(addr).await?;
@@ -41,10 +43,18 @@ pub async fn serve_http(
         let stream = listener.accept().await?.0;
         let io = TokioIo::new(stream);
         let router_arc = Arc::new(router.clone());
-        let service = service_fn(move |req: SdkRequest<hyper::body::Incoming>| {
+        let service = service_fn(move |req: HyperRequest<hyper::body::Incoming>| {
             println!("Incoming request: {}", req.uri());
             let router_arc_clone = router_arc.clone();
-            async move { router_arc_clone.route(req).await }
+            async move {
+                router_arc_clone
+                    .route(Request::Hyper(req))
+                    .await
+                    .map(|res: Response<String>| match res {
+                        Response::Hyper(res) => res,
+                        _ => unreachable!(),
+                    })
+            }
         });
         tokio::task::spawn(async move {
             if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
@@ -55,12 +65,15 @@ pub async fn serve_http(
 }
 
 pub async fn serve_serverless(
-    request: SdkRequest<Body>,
     router: Router,
-) -> Result<SdkResponse<Body>, Box<dyn Error + Send + Sync + 'static>> {
+    request: ServerlessRequest,
+) -> Result<ServerlessResponse<Body>, Box<dyn Error + Send + Sync + 'static>> {
     router
-        .route(request)
+        .route::<Body, Body>(Request::Serverless(request))
         .await
-        .map(|res| res.map(Body::Text))
+        .map(|res: Response<Body>| match res {
+            Response::Serverless(res) => res,
+            _ => unreachable!(),
+        })
         .map_err(|e| e.into())
 }

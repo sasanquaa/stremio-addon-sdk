@@ -5,8 +5,9 @@ use hyper::header::HeaderValue;
 use stremio_core::constants::ADDON_MANIFEST_PATH;
 use stremio_core::types::addon::{ExtraValue, Manifest, ResourcePath};
 
-use crate::{SdkRequest, SdkResponse};
 use crate::builder::Handler;
+use crate::request::Request;
+use crate::response::Response;
 
 use super::server::ServerOptions;
 
@@ -14,14 +15,14 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    Http(hyper::http::Error),
+    Http(Box<dyn std::error::Error + Send + Sync + 'static>),
     Serde(serde_json::Error),
 }
 
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Http(err) => Some(err),
+            Error::Http(err) => Some(err.as_ref()),
             Error::Serde(err) => Some(err),
         }
     }
@@ -61,17 +62,27 @@ impl Router {
         }
     }
 
-    pub(crate) async fn route<T>(&self, request: SdkRequest<T>) -> Result<SdkResponse<String>> {
+    pub(crate) async fn route<T, E>(&self, request: Request<E>) -> Result<Response<T>>
+        where
+            T: From<String> + Default,
+    {
+        let is_serverless = match request {
+            Request::Serverless(_) => true,
+            Request::Hyper(_) => false,
+        };
         if request.method() != Method::GET {
-            return self.response_from(ResponseKind::MethodNotAllowed);
+            return self.response_from(is_serverless, ResponseKind::MethodNotAllowed);
         }
         return match request.uri().path() {
-            "/" => self.response_from(ResponseKind::Html(self.options.landing_html.clone())),
-            ADDON_MANIFEST_PATH => self.response_from(ResponseKind::Manifest),
+            "/" => self.response_from(
+                is_serverless,
+                ResponseKind::Html(self.options.landing_html.clone()),
+            ),
+            ADDON_MANIFEST_PATH => self.response_from(is_serverless, ResponseKind::Manifest),
             p => {
                 let parts = p.split('/').skip(1).collect::<Vec<&str>>();
                 if parts.len() < 3 || parts.len() > 4 {
-                    return self.response_from(ResponseKind::BadRequest);
+                    return self.response_from(is_serverless, ResponseKind::BadRequest);
                 }
                 let path = if parts.len() == 4 {
                     let extras = parts[3]
@@ -102,15 +113,15 @@ impl Router {
                     .iter()
                     .find(|&handler| p.starts_with(format!("/{}", handler.name).as_str()));
                 if handler.is_none() {
-                    return self.response_from(ResponseKind::NotFound);
+                    return self.response_from(is_serverless, ResponseKind::NotFound);
                 }
                 let resource = (handler.unwrap().func)(&path)
                     .await
                     .map(|path| serde_json::to_string(&path).map_err(Error::Serde));
                 if resource.is_none() {
-                    return self.response_from(ResponseKind::NotFound);
+                    return self.response_from(is_serverless, ResponseKind::NotFound);
                 }
-                self.response_from(ResponseKind::Json(resource.unwrap()?))
+                self.response_from(is_serverless, ResponseKind::Json(resource.unwrap()?))
             }
         };
     }
@@ -123,17 +134,11 @@ impl Router {
         &self.manifest
     }
 
-    fn response_from(&self, kind: ResponseKind) -> Result<SdkResponse<String>> {
-        let body = match &kind {
-            ResponseKind::Json(str) => str.to_string(),
-            ResponseKind::Html(str) => str.to_string(),
-            ResponseKind::MethodNotAllowed => "Method Not Allowed".to_string(),
-            ResponseKind::NotFound => "Not Found".to_string(),
-            ResponseKind::BadRequest => "Bad Request".to_string(),
-            ResponseKind::Manifest => {
-                serde_json::to_string(self.manifest()).map_err(Error::Serde)?
-            }
-        };
+    fn response_from<T>(&self, is_serverless: bool, kind: ResponseKind) -> Result<Response<T>>
+        where
+            T: From<String> + Default,
+    {
+        let headers = self.header_map_from(&kind);
         let code = match &kind {
             ResponseKind::Manifest | ResponseKind::Html(_) | ResponseKind::Json(_) => {
                 StatusCode::OK
@@ -142,12 +147,25 @@ impl Router {
             ResponseKind::NotFound => StatusCode::NOT_FOUND,
             ResponseKind::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
         };
-        let mut builder = SdkResponse::builder().status(code);
-        builder
-            .headers_mut()
-            .unwrap()
-            .extend(self.header_map_from(&kind));
-        builder.body(body).map_err(Error::Http)
+        let manifest = if matches!(kind, ResponseKind::Manifest) {
+            Some(serde_json::to_string(self.manifest()).map_err(Error::Serde)?)
+        } else {
+            None
+        };
+        let body = match kind {
+            ResponseKind::Json(str) => T::from(str),
+            ResponseKind::Html(str) => T::from(str),
+            ResponseKind::MethodNotAllowed => T::from("Method Not Allowed".into()),
+            ResponseKind::NotFound => T::from("Not Found".into()),
+            ResponseKind::BadRequest => T::from("Bad Request".into()),
+            ResponseKind::Manifest => T::from(manifest.unwrap()),
+        };
+        Response::builder()
+            .status(code)
+            .headers(headers)
+            .body(body)
+            .build(is_serverless)
+            .map_err(Error::Http)
     }
 
     fn header_map_from(&self, kind: &ResponseKind) -> HeaderMap {
@@ -163,7 +181,7 @@ impl Router {
                     HeaderValue::from_str(
                         format!("max-age={}, public", self.options.cache_max_age).as_str(),
                     )
-                    .unwrap(),
+                        .unwrap(),
                 );
                 headers_map.append(
                     header::CONTENT_TYPE,
@@ -189,6 +207,8 @@ mod tests {
     use stremio_core::types::addon::ResourcePath;
 
     use crate::builder::Handler;
+    use crate::request;
+    use crate::response::Response;
     use crate::router::Router;
     use crate::server::ServerOptions;
     use crate::utils::default_manifest;
@@ -197,34 +217,37 @@ mod tests {
     async fn response_kind_method_not_allowed_when_not_get() {
         let router = Router::new(default_manifest(), vec![], ServerOptions::default());
         let response = router
-            .route(Request::builder().method("POST").body(()).unwrap())
+            .route::<String, ()>(request::Request::Hyper(
+                Request::builder().method("POST").body(()).unwrap(),
+            ))
             .await;
         assert!(response.is_ok());
-        assert!(response.as_ref().unwrap().headers().is_empty());
-        assert_eq!(
-            response.as_ref().unwrap().status(),
-            StatusCode::METHOD_NOT_ALLOWED
-        );
+        let response = match response.unwrap() {
+            Response::Hyper(res) => res,
+            Response::Serverless(_) => unreachable!(),
+        };
+        assert!(response.headers().is_empty());
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
 
     #[tokio::test]
     async fn response_kind_html_when_initial_path() {
         let router = Router::new(default_manifest(), vec![], ServerOptions::default());
         let response = router
-            .route(
+            .route::<String, ()>(request::Request::Hyper(
                 Request::builder()
                     .uri("http://127.0.0.1:7070/")
                     .body(())
                     .unwrap(),
-            )
+            ))
             .await;
         assert!(response.is_ok());
+        let response = match response.unwrap() {
+            Response::Hyper(res) => res,
+            Response::Serverless(_) => unreachable!(),
+        };
         assert_eq!(
-            response
-                .unwrap()
-                .headers()
-                .get(header::CONTENT_TYPE)
-                .unwrap(),
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
             HeaderValue::from_static("text/html")
         );
     }
@@ -233,25 +256,24 @@ mod tests {
     async fn response_kind_json_when_manifest_path() {
         let router = Router::new(default_manifest(), vec![], ServerOptions::default());
         let response = router
-            .route(
+            .route::<String, ()>(request::Request::Hyper(
                 Request::builder()
                     .uri("http://127.0.0.1:7070/manifest.json")
                     .body(())
                     .unwrap(),
-            )
+            ))
             .await;
         assert!(response.is_ok());
+        let response = match response.unwrap() {
+            Response::Hyper(res) => res,
+            Response::Serverless(_) => unreachable!(),
+        };
         assert_eq!(
-            response
-                .as_ref()
-                .unwrap()
-                .headers()
-                .get(header::CONTENT_TYPE)
-                .unwrap(),
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
             HeaderValue::from_static("application/json")
         );
         assert_eq!(
-            response.as_ref().unwrap().body(),
+            response.body(),
             &serde_json::to_string(&default_manifest()).unwrap()
         );
     }
@@ -260,32 +282,40 @@ mod tests {
     async fn response_kind_bad_request_when_invalid_path() {
         let router = Router::new(default_manifest(), vec![], ServerOptions::default());
         let response = router
-            .route(
+            .route::<String, ()>(request::Request::Hyper(
                 Request::builder()
                     .uri("http://127.0.0.1:7070/foo/bar")
                     .body(())
                     .unwrap(),
-            )
+            ))
             .await;
         assert!(response.is_ok());
-        assert!(response.as_ref().unwrap().headers().is_empty());
-        assert_eq!(response.as_ref().unwrap().status(), StatusCode::BAD_REQUEST);
+        let response = match response.unwrap() {
+            Response::Hyper(res) => res,
+            Response::Serverless(_) => unreachable!(),
+        };
+        assert!(response.headers().is_empty());
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
     async fn response_kind_not_found_when_no_handler() {
         let router = Router::new(default_manifest(), vec![], ServerOptions::default());
         let response = router
-            .route(
+            .route::<String, ()>(request::Request::Hyper(
                 Request::builder()
                     .uri("http://127.0.0.1:7070/stream/movie/id")
                     .body(())
                     .unwrap(),
-            )
+            ))
             .await;
         assert!(response.is_ok());
-        assert!(response.as_ref().unwrap().headers().is_empty());
-        assert_eq!(response.as_ref().unwrap().status(), StatusCode::NOT_FOUND);
+        let response = match response.unwrap() {
+            Response::Hyper(res) => res,
+            Response::Serverless(_) => unreachable!(),
+        };
+        assert!(response.headers().is_empty());
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
@@ -296,16 +326,19 @@ mod tests {
         };
         let router = Router::new(default_manifest(), vec![handler], ServerOptions::default());
         let response = router
-            .route(
+            .route::<String, ()>(request::Request::Hyper(
                 Request::builder()
                     .uri("http://127.0.0.1:7070/stream/movie/id.json")
                     .body(())
                     .unwrap(),
-            )
+            ))
             .await;
-        println!("{:?}", response);
         assert!(response.is_ok());
-        assert!(response.as_ref().unwrap().headers().is_empty());
-        assert_eq!(response.as_ref().unwrap().status(), StatusCode::NOT_FOUND);
+        let response = match response.unwrap() {
+            Response::Hyper(res) => res,
+            Response::Serverless(_) => unreachable!(),
+        };
+        assert!(response.headers().is_empty());
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }

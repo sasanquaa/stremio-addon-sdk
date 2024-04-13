@@ -11,7 +11,7 @@ use crate::router::Router;
 use crate::server::ServerOptions;
 
 type HandlerFn =
-    dyn Fn(&ResourcePath) -> BoxFuture<Option<ResourceResponse>> + Send + Sync + 'static;
+dyn Fn(&ResourcePath) -> BoxFuture<Option<ResourceResponse>> + Send + Sync + 'static;
 
 #[derive(Clone)]
 pub struct Handler {
@@ -34,7 +34,7 @@ impl Display for HandlerKind {
             HandlerKind::Stream => STREAM_RESOURCE_NAME,
             HandlerKind::Catalog => CATALOG_RESOURCE_NAME,
         }
-        .to_string();
+            .to_string();
         write!(f, "{}", str)
     }
 }
@@ -53,8 +53,8 @@ impl Builder {
     }
 
     pub fn handler<F>(mut self, kind: HandlerKind, handler: F) -> Self
-    where
-        F: Fn(&ResourcePath) -> BoxFuture<Option<ResourceResponse>> + Send + Sync + 'static,
+        where
+            F: Fn(&ResourcePath) -> BoxFuture<Option<ResourceResponse>> + Send + Sync + 'static,
     {
         if self.handlers.iter().any(|h| h.name == kind.to_string()) {
             panic!("handler for resource '{}' is already defined!", kind);
