@@ -8,8 +8,7 @@ use stremio_core::types::addon::{ExtraValue, Manifest, ResourcePath};
 use crate::builder::Handler;
 use crate::request::Request;
 use crate::response::Response;
-
-use super::server::ServerOptions;
+use crate::server::ServerOptions;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -63,8 +62,8 @@ impl Router {
     }
 
     pub(crate) async fn route<T, E>(&self, request: Request<E>) -> Result<Response<T>>
-        where
-            T: From<String> + Default,
+    where
+        T: From<String> + Default,
     {
         let is_serverless = match request {
             Request::Serverless(_) => true,
@@ -76,7 +75,7 @@ impl Router {
         return match request.uri().path() {
             "/" => self.response_from(
                 is_serverless,
-                ResponseKind::Html(self.options.landing_html.clone()),
+                ResponseKind::Html(self.options.index_html.clone()),
             ),
             ADDON_MANIFEST_PATH => self.response_from(is_serverless, ResponseKind::Manifest),
             p => {
@@ -126,7 +125,7 @@ impl Router {
         };
     }
 
-    pub(crate) fn server_options(&self) -> &ServerOptions {
+    pub(crate) fn options(&self) -> &ServerOptions {
         &self.options
     }
 
@@ -135,8 +134,8 @@ impl Router {
     }
 
     fn response_from<T>(&self, is_serverless: bool, kind: ResponseKind) -> Result<Response<T>>
-        where
-            T: From<String> + Default,
+    where
+        T: From<String> + Default,
     {
         let headers = self.header_map_from(&kind);
         let code = match &kind {
@@ -181,7 +180,7 @@ impl Router {
                     HeaderValue::from_str(
                         format!("max-age={}, public", self.options.cache_max_age).as_str(),
                     )
-                        .unwrap(),
+                    .unwrap(),
                 );
                 headers_map.append(
                     header::CONTENT_TYPE,

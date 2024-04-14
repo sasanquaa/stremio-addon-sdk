@@ -9,8 +9,8 @@ use tokio::net::TcpListener;
 use vercel_runtime::Body;
 
 use crate::request::{HyperRequest, Request, ServerlessRequest};
-use crate::response::{HyperResponse, ServerlessResponse};
 use crate::response::Response;
+use crate::response::{HyperResponse, ServerlessResponse};
 use crate::router::Router;
 
 #[derive(Debug, Clone)]
@@ -18,7 +18,7 @@ pub struct ServerOptions {
     pub ip: IpAddr,
     pub port: u16,
     pub cache_max_age: i32,
-    pub landing_html: String,
+    pub index_html: String,
 }
 
 impl Default for ServerOptions {
@@ -27,7 +27,7 @@ impl Default for ServerOptions {
             ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
             port: 43001,
             cache_max_age: 24 * 3600 * 3, // cache 3 days,
-            landing_html: "<html>Hello World</html>".into(),
+            index_html: include_str!("../res/index.html").into(),
         }
     }
 }
@@ -35,7 +35,7 @@ impl Default for ServerOptions {
 pub async fn serve_http(
     router: Router,
 ) -> Result<HyperResponse<String>, Box<dyn Error + Send + Sync + 'static>> {
-    let options = router.server_options();
+    let options = router.options();
     let addr = SocketAddr::new(options.ip, options.port);
     let listener = TcpListener::bind(addr).await?;
     println!("Running on: {}", addr);

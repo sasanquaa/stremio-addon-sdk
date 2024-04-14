@@ -46,8 +46,8 @@ impl<T> ResponseBuilder<T> {
         self,
         is_serverless: bool,
     ) -> Result<Response<T>, Box<dyn Error + Send + Sync + 'static>>
-        where
-            T: Default,
+    where
+        T: Default,
     {
         if is_serverless {
             self.build_serverless()
@@ -57,29 +57,29 @@ impl<T> ResponseBuilder<T> {
     }
 
     fn build_hyper(self) -> Result<Response<T>, Box<dyn Error + Send + Sync + 'static>>
-        where
-            T: Default,
+    where
+        T: Default,
     {
         let mut builder = HyperResponse::builder().status(self.code);
         for (name, value) in &self.headers {
             builder = builder.header(name.as_str(), value.as_bytes());
         }
         builder
-            .body(self.body.unwrap_or(T::default()))
+            .body(self.body.unwrap_or_default())
             .map(Response::Hyper)
             .map_err(|err| err.into())
     }
 
     fn build_serverless(self) -> Result<Response<T>, Box<dyn Error + Send + Sync + 'static>>
-        where
-            T: Default,
+    where
+        T: Default,
     {
         let mut builder = ServerlessResponse::builder().status(self.code.as_str());
         for (name, value) in &self.headers {
             builder = builder.header(name.as_str(), value.as_bytes());
         }
         builder
-            .body(self.body.unwrap_or(T::default()))
+            .body(self.body.unwrap_or_default())
             .map(Response::Serverless)
             .map_err(|err| err.into())
     }

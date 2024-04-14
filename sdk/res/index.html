@@ -1,0 +1,56 @@
+<html lang="en">
+
+<head>
+    <title>Addon</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+        }
+
+        .button-container {
+            position: absolute;
+            margin: auto;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            width: fit-content;
+            height: fit-content;
+            background-color: #ccc;
+            border-radius: 3px;
+            text-decoration: none;
+        }
+
+        button {
+            border: 0;
+            outline: 0;
+            color: white;
+            background: #8A5AAB;
+            padding: 1.2vh 3.5vh;
+            margin: auto;
+            text-align: center;
+            font-family: 'Open Sans', Arial, sans-serif;
+            font-size: 2.2vh;
+            font-weight: 600;
+            cursor: pointer;
+            display: block;
+            box-shadow: 0 0.5vh 1vh rgba(0, 0, 0, 0.2);
+            transition: box-shadow 0.1s ease-in-out;
+        }
+    </style>
+</head>
+
+<body>
+<a id="install-button" class="button-container" href="#">
+    <button>Install</button>
+</a>
+<script>
+    document.getElementById("install-button").href = 'stremio://' + window.location.host + '/manifest.json';
+</script>
+</body>
+
+</html>
