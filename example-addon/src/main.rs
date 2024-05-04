@@ -1,13 +1,14 @@
 use std::error::Error;
 use std::future;
 
-use futures::future::BoxFuture;
-use stremio_core::types::addon::{Manifest, ManifestResource, ResourceResponse, Version};
-use stremio_core::types::resource::{Stream, StreamSource};
-use url::Url;
-
 use stremio_addon_sdk::builder::{Builder, HandlerKind};
+use stremio_addon_sdk::futures::future::BoxFuture;
 use stremio_addon_sdk::server::{serve_http, ServerOptions};
+use stremio_addon_sdk::stremio_core::types::addon::{
+    Manifest, ManifestResource, ResourceResponse, Version,
+};
+use stremio_addon_sdk::stremio_core::types::resource::{Stream, StreamSource};
+use stremio_addon_sdk::url::Url;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {

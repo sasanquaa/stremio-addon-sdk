@@ -2,16 +2,13 @@
 name = "example-addon"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.78.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-stremio-core = { git = "https://github.com/stremio/stremio-core" }
 stremio-addon-sdk = { path = "../sdk" }
 tokio = { version = "1.37.0", features = ["full"] }
-url = "2.5.0"
-vercel_runtime = { version = "1.1.1" }
-futures = "0.3.30"
 
 [[bin]]
 name = "serverless"
